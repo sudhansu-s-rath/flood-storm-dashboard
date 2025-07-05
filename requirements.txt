@@ -1,0 +1,6 @@
+streamlit
+xarray
+rioxarray
+matplotlib
+leafmap
+geopandas
