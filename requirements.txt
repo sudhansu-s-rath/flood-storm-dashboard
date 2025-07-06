@@ -6,3 +6,4 @@ leafmap
 geopandas
 netCDF4
 h5netcdf
+localtileserver
