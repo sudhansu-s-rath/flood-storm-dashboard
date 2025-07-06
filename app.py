@@ -7,6 +7,11 @@ import matplotlib.pyplot as plt
 def load_data():
     ds = xr.open_dataset("data/sample.nc", engine="netcdf4")
     return ds
+try:
+    import localtileserver
+    st.write("localtileserver is installed!")
+except ImportError:
+    st.error("localtileserver is NOT installed!")
 
 st.title("Extreme Rainfall Explorer")
 st.write("Click a point on the map to view rainfall time series at that location.")
