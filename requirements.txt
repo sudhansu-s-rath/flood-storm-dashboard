@@ -4,3 +4,5 @@ rioxarray
 matplotlib
 leafmap
 geopandas
+netCDF4
+h5netcdf
