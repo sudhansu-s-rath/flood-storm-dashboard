@@ -31,19 +31,22 @@ avg_map.rio.to_raster("temp.tif")
 
 m = leafmap.Map(center=[20.5, 85.5], zoom=5)
 m.add_raster("temp.tif", layer_name="Mean Extreme Precip")
-m.add_click_marker()
 m.to_streamlit(height=600)
 
-clicked = m.user_click()
+# Use Streamlit's input widgets for lat/lon instead of map clicks
+col1, col2 = st.columns(2)
+with col1:
+    lat = st.number_input("Latitude", value=20.5, min_value=float(ds.lat.min()), max_value=float(ds.lat.max()))
+with col2:
+    lon = st.number_input("Longitude", value=85.5, min_value=float(ds.lon.min()), max_value=float(ds.lon.max()))
 
-if clicked:
-    lon, lat = clicked['lon'], clicked['lat']
-    st.success(f"You clicked at lat: {lat:.2f}, lon: {lon:.2f}")
-    ts = ds['precip'].sel(lat=lat, lon=lon, method='nearest')
+if st.button("Get Time Series"):
+    st.success(f"Getting time series at lat: {lat:.2f}, lon: {lon:.2f}")
+    ts = ds['pr'].sel(lat=lat, lon=lon, method='nearest')
     df = ts.to_dataframe().reset_index()
 
     fig, ax = plt.subplots()
-    ax.plot(df['time'], df['precip'])
+    ax.plot(df['time'], df['pr'])
     ax.set_title(f"Time Series at ({lat:.2f}, {lon:.2f})")
     ax.set_ylabel("Extreme Rainfall (mm)")
     st.pyplot(fig)
