@@ -14,7 +14,7 @@ st.write("Click a point on the map to view rainfall time series at that location
 ds = load_data()
 
 # Calculate spatial mean for map
-avg_map = ds['precip'].mean(dim='time')
+avg_map = ds['pr'].mean(dim='time')
 avg_map = avg_map.rio.write_crs("EPSG:4326")
 avg_map.rio.to_raster("temp.tif")
 
