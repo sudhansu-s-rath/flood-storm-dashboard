@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import folium
 from streamlit_folium import st_folium
 import leafmap.foliumap as leafmap
+import rioxarray as rxr
 
 st.set_page_config(page_title="🌧️ Flood Storm Dashboard", layout="wide")
 
@@ -57,30 +58,47 @@ st.subheader("🗺️ Interactive Map")
 center_lat = float((ds.lat.min() + ds.lat.max()) / 2)
 center_lon = float((ds.lon.min() + ds.lon.max()) / 2)
 
-# Create map with leafmap for better raster handling
+# Create map with precipitation data overlay
+st.write("**Creating precipitation overlay...**")
+
+# Debug information
+st.write(f"- Data shape: {yearly_mean.shape}")
+st.write(f"- Data range: {yearly_mean.min().values:.6f} to {yearly_mean.max().values:.6f}")
+
+# Create folium map
+folium_map = folium.Map(location=[center_lat, center_lon], zoom_start=6)
+
+# Method 1: Try leafmap raster overlay
+overlay_success = False
 try:
-    # Save yearly mean to a temporary GeoTIFF
-    yearly_mean_copy = yearly_mean.copy()
-    yearly_mean_copy.rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)
-    yearly_mean_copy.rio.write_crs("EPSG:4326", inplace=True)
-    yearly_mean_copy.rio.to_raster("temp_yearly_mean.tif")
+    # Ensure we have rio accessor
+    if not hasattr(yearly_mean, 'rio'):
+        yearly_mean = yearly_mean.rio.set_spatial_dims(x_dim="lon", y_dim="lat")
+    
+    # Set CRS
+    yearly_mean = yearly_mean.rio.write_crs("EPSG:4326")
+    
+    # Save to GeoTIFF
+    yearly_mean.rio.to_raster("temp_yearly_mean.tif")
     
     # Create leafmap
     m = leafmap.Map(center=[center_lat, center_lon], zoom=6)
     m.add_raster("temp_yearly_mean.tif", 
-                 layer_name="Mean Yearly Max Precipitation", 
-                 opacity=0.7, 
-                 colormap="Blues")
+                 layer_name="Yearly Max Precipitation", 
+                 opacity=0.8, 
+                 colormap="viridis")
     
-    # Convert to folium for better click handling
+    # Convert to folium
     folium_map = m.to_folium()
-    
-    st.success("✅ Raster overlay created successfully!")
+    overlay_success = True
+    st.success("✅ Leafmap raster overlay created successfully!")
     
 except Exception as e:
-    st.warning(f"⚠️ Could not create raster overlay: {str(e)}")
-    # Fallback to basic map with data bounds
-    folium_map = folium.Map(location=[center_lat, center_lon], zoom_start=6)
+    st.warning(f"⚠️ Leafmap method failed: {str(e)}")
+
+# Method 2: If leafmap fails, create detailed grid visualization
+if not overlay_success:
+    st.info("💡 Using enhanced grid visualization instead of raster overlay")
     
     # Add data coverage rectangle
     bounds = [
@@ -90,32 +108,73 @@ except Exception as e:
     
     folium.Rectangle(
         bounds=bounds,
-        color='blue',
+        color='red',
         fill=True,
-        fillColor='lightblue',
-        fillOpacity=0.3,
+        fillColor='red',
+        fillOpacity=0.1,
         popup='Data Coverage Area'
     ).add_to(folium_map)
     
-    # Add sample grid points
-    lat_sample = np.linspace(ds.lat.min(), ds.lat.max(), 10)
-    lon_sample = np.linspace(ds.lon.min(), ds.lon.max(), 10)
+    # Create high-resolution grid overlay
+    lat_points = np.linspace(ds.lat.min(), ds.lat.max(), 30)
+    lon_points = np.linspace(ds.lon.min(), ds.lon.max(), 30)
     
-    for i, lat in enumerate(lat_sample[::2]):  # Every other point
-        for j, lon in enumerate(lon_sample[::2]):
+    # Get min/max for color scaling
+    min_val = yearly_mean.min().values
+    max_val = yearly_mean.max().values
+    
+    # Add colored grid points
+    for i, lat in enumerate(lat_points):
+        for j, lon in enumerate(lon_points):
             try:
                 value = yearly_mean.sel(lat=lat, lon=lon, method='nearest').values
+                
+                # Normalize for color (0-1)
+                normalized = (value - min_val) / (max_val - min_val)
+                
+                # Create viridis-like color
+                if normalized < 0.25:
+                    color = f'rgb({int(68*normalized/0.25)}, {int(1*normalized/0.25)}, {int(84*normalized/0.25)})'
+                elif normalized < 0.5:
+                    color = f'rgb({int(49*(normalized-0.25)/0.25)}, {int(104*(normalized-0.25)/0.25)}, {int(142*(normalized-0.25)/0.25)})'
+                elif normalized < 0.75:
+                    color = f'rgb({int(53*(normalized-0.5)/0.25)}, {int(183*(normalized-0.5)/0.25)}, {int(121*(normalized-0.5)/0.25)})'
+                else:
+                    color = f'rgb({int(253*(normalized-0.75)/0.25)}, {int(231*(normalized-0.75)/0.25)}, {int(37*(normalized-0.75)/0.25)})'
+                
                 folium.CircleMarker(
                     location=[float(lat), float(lon)],
-                    radius=3,
-                    popup=f'Sample Point<br>Lat: {lat:.2f}, Lon: {lon:.2f}<br>Value: {value:.6f}',
-                    color='red',
+                    radius=2,
+                    popup=f'Precipitation: {value:.6f}<br>Lat: {lat:.2f}, Lon: {lon:.2f}',
+                    color=color,
                     fill=True,
-                    fillColor='red',
-                    fillOpacity=0.6
+                    fillColor=color,
+                    fillOpacity=0.8,
+                    weight=1
                 ).add_to(folium_map)
-            except:
-                pass
+                
+            except Exception as e:
+                continue
+    
+    # Add custom legend
+    legend_html = '''
+    <div style="position: fixed; 
+                top: 10px; right: 10px; width: 200px; height: 150px; 
+                background-color: white; border:2px solid grey; z-index:9999; 
+                font-size:12px; padding: 10px; border-radius: 5px;">
+    <h4 style="margin: 0 0 10px 0;">Precipitation</h4>
+    <div style="background: linear-gradient(to top, #440154, #31688e, #35b779, #fde725); 
+                height: 80px; width: 20px; margin: 5px 0; float: left;"></div>
+    <div style="margin-left: 30px; font-size: 10px;">
+        <div style="margin-bottom: 50px;">High</div>
+        <div>Low</div>
+    </div>
+    <div style="clear: both; font-size: 10px; margin-top: 5px;">kg m⁻² s⁻¹</div>
+    </div>
+    '''
+    folium_map.get_root().html.add_child(folium.Element(legend_html))
+    
+    st.success("✅ Enhanced grid visualization created!")
 
 # Add layer control
 folium.LayerControl().add_to(folium_map)
