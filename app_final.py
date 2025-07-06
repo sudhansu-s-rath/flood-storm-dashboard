@@ -19,12 +19,9 @@ def load_and_process_data():
         # Load dataset
         ds = xr.open_dataset("data/sample.nc", engine="netcdf4")
         
-        # Convert time to datetime if needed
-        if not pd.api.types.is_datetime64_any_dtype(ds.time):
-            ds['time'] = pd.to_datetime(ds.time.values)
-        
+        # Use xarray's native datetime handling for grouping
         # Group by year and calculate maximum (extreme values)
-        yearly_max = ds.groupby('time.year').max('time')
+        yearly_max = ds.groupby(ds['time'].dt.year).max('time')
         
         # Calculate mean across years for mapping
         yearly_mean = yearly_max['pr'].mean(dim='year')
