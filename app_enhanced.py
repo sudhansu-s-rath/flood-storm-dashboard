@@ -19,7 +19,9 @@ def load_data():
 def prepare_yearly_data(ds):
     # Calculate yearly maximum values (extreme rainfall)
     yearly_max = ds.groupby('time.year').max('time')
-    return yearly_max
+    # Also calculate the overall mean across all years for mapping
+    yearly_mean = yearly_max['pr'].mean(dim='year')
+    return yearly_max, yearly_mean
 
 try:
     import localtileserver
@@ -31,28 +33,78 @@ st.title("🌧️ Extreme Rainfall Explorer")
 st.write("**Click anywhere on the map** to view rainfall time series at that location.")
 
 ds = load_data()
-yearly_ds = prepare_yearly_data(ds)
+yearly_ds, yearly_mean_map = prepare_yearly_data(ds)
 
-# Calculate spatial mean for map using yearly data
-avg_map = yearly_ds['pr'].mean(dim='year')  # Average over years
+# Use the yearly mean for the map display
+avg_map = yearly_mean_map
 
 # Set CRS and spatial dims explicitly
 avg_map.rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)
 avg_map.rio.write_crs("EPSG:4326", inplace=True)
 
 # Export to GeoTIFF
-avg_map.rio.to_raster("temp.tif")
+try:
+    avg_map.rio.to_raster("temp_yearly.tif")
+    st.success("✅ GeoTIFF file created successfully!")
+except Exception as e:
+    st.error(f"❌ Error creating GeoTIFF: {str(e)}")
+    # Try alternative approach
+    try:
+        avg_map.to_netcdf("temp_yearly.nc")
+        st.info("💡 Created NetCDF file as fallback")
+    except Exception as e2:
+        st.error(f"❌ Error creating NetCDF: {str(e2)}")
 
-# Create leafmap with the raster overlay
+# Create leafmap with the yearly raster overlay
 center_lat = float((ds.lat.min() + ds.lat.max()) / 2)
 center_lon = float((ds.lon.min() + ds.lon.max()) / 2)
 
 # Use leafmap for proper raster display
 m = leafmap.Map(center=[center_lat, center_lon], zoom=6)
-m.add_raster("temp.tif", layer_name="Mean Extreme Precip", opacity=0.8, colormap="viridis")
+
+# Try to add raster layer
+try:
+    m.add_raster("temp_yearly.tif", layer_name="Mean Yearly Max Extreme Precip", opacity=0.8, colormap="viridis")
+    st.success("✅ Raster layer added to map!")
+except Exception as e:
+    st.error(f"❌ Error adding raster layer: {str(e)}")
+    # Try adding a simple basemap layer
+    try:
+        # Create a simple visualization using the data bounds
+        import folium
+        from folium import plugins
+        
+        # Create basic folium map
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=6)
+        
+        # Add data bounds as a rectangle
+        bounds = [
+            [float(ds.lat.min()), float(ds.lon.min())],
+            [float(ds.lat.max()), float(ds.lon.max())]
+        ]
+        
+        folium.Rectangle(
+            bounds=bounds,
+            color='red',
+            fill=True,
+            fillColor='blue',
+            fillOpacity=0.2,
+            popup='Data Coverage Area'
+        ).add_to(m)
+        
+        st.info("💡 Added data bounds rectangle as fallback")
+        
+    except Exception as e2:
+        st.error(f"❌ Error with fallback visualization: {str(e2)}")
+        # Create basic leafmap without raster
+        m = leafmap.Map(center=[center_lat, center_lon], zoom=6)
 
 # Convert to folium but keep the raster
-folium_map = m.to_folium()
+try:
+    folium_map = m.to_folium()
+except:
+    # If m is already folium, use it directly
+    folium_map = m
 
 # Add layer control
 folium.LayerControl().add_to(folium_map)
@@ -61,9 +113,18 @@ folium.LayerControl().add_to(folium_map)
 st.subheader("Interactive Map")
 map_data = st_folium(folium_map, height=600, width=800)
 
-# Show data bounds
+# Show data bounds and information
 st.info(f"📍 Data coverage: Latitude {ds.lat.min().values:.2f}° to {ds.lat.max().values:.2f}°, "
         f"Longitude {ds.lon.min().values:.2f}° to {ds.lon.max().values:.2f}°")
+
+# Show data statistics
+with st.expander("📊 Dataset Information"):
+    st.write(f"**Original data shape:** {ds.dims}")
+    st.write(f"**Time range:** {ds.time.min().values} to {ds.time.max().values}")
+    st.write(f"**Yearly data shape:** {yearly_ds.dims}")
+    st.write(f"**Year range:** {yearly_ds.year.min().values} to {yearly_ds.year.max().values}")
+    st.write(f"**Yearly mean map range:** {yearly_mean_map.min().values:.6f} to {yearly_mean_map.max().values:.6f}")
+    st.write(f"**Variables:** {list(ds.data_vars.keys())}")
 
 # Initialize session state for clicked coordinates
 if 'clicked_coords' not in st.session_state:
