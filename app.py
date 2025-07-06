@@ -14,8 +14,9 @@ st.write("Click a point on the map to view rainfall time series at that location
 ds = load_data()
 
 # Calculate spatial mean for map
-avg_map = ds['pr'].mean(dim='time')
-avg_map = avg_map.rio.write_crs("EPSG:4326")
+avg_map = avg_map.rename({'lon': 'x', 'lat': 'y'})
+avg_map.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
+avg_map.rio.write_crs("EPSG:4326", inplace=True)
 avg_map.rio.to_raster("temp.tif")
 
 m = leafmap.Map(center=[20.5, 85.5], zoom=5)
