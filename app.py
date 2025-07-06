@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 @st.cache_resource
 def load_data():
-    ds = xr.open_dataset("data/sample.nc")
+    ds = xr.open_dataset("data/sample.nc", engine="netcdf4")
     return ds
 
 st.title("Extreme Rainfall Explorer")
